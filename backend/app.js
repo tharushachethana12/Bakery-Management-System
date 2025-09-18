@@ -1,5 +1,7 @@
 // mongodb username - sahana2002 & mongodb password - QhO31A3P9hnHysvq
 
+require('dotenv').config(); 
+
 const express = require("express");
 const mongoose = require("mongoose");
 const router = require("./Routes/UserRoutes");
@@ -10,11 +12,11 @@ const app = express();
 app.use(express.json());
 app.use("/users",router);
 
+const mongoURL = process.env.MONGO_URI;
 
-mongoose.connect("mongodb+srv://sahana2002:QhO31A3P9hnHysvq@cluster0.wptflp0.mongodb.net/")
+mongoose.connect("mongodb+srv://sahana2002:QhO31A3P9hnHysvq@cluster0.wptflp0.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", {useNewUrlParser: true, useUnifiedTopology: true})
 .then(()=> console.log("connected to mongoDB"))
 .then(()=> {
     app.listen(4000);
 })
-.catch((err)=> console.log((err))); 
-
+.catch((err)=> console.log(("error connecting",err))); 

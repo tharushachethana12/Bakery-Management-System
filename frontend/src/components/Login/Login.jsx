@@ -14,11 +14,11 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex bg-amber-50">
-      {/* Left side - Animation */}
+      
       <div className="hidden md:flex md:w-1/2 bg-gradient-to-br  items-center justify-center p-12 relative overflow-hidden">
         <div className="absolute inset-0 bg-white/10 backdrop-blur-sm"></div>
         
-        {/* Animated bakery elements */}
+        
         <div className="relative z-10 text-center">
           <h1 className="text-5xl font-bold text-amber-600 mb-4">Sweet Dreams Bakery</h1>
           <p className="text-xl text-amber-400 mb-8">Where every bite tells a story of tradition and taste</p>
@@ -29,7 +29,7 @@ const Login = () => {
               <span className="text-5xl">🍞</span>
             </div>
             
-            {/* Floating Croissant */}
+            
             <div className="absolute top-10 right-1/4 animate-float delay-1000">
               <span className="text-4xl">🥐</span>
             </div>
