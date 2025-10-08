@@ -141,7 +141,7 @@ const App = () => {
     e.preventDefault();
     
     if (!address.trim()) {
-      setError('Please enter a delivery address in Sri Lanka');
+      setError('Please enter a delivery address');
       return;
     }
 
