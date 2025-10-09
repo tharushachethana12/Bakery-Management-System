@@ -4,7 +4,6 @@ import L from 'leaflet';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
 
-
 // Fix for default markers
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -71,7 +70,7 @@ const App = () => {
   const suggestionsRef = useRef(null);
 
   // Default center set to Colombo, Sri Lanka
-  const defaultCenter = [6.9271, 79.8612]; // Colombo, Sri Lanka
+  const defaultCenter = [6.9271, 79.8612];
 
   // Fetch bakery location and delivery info on component mount
   useEffect(() => {
@@ -541,7 +540,18 @@ const App = () => {
                 <br />
                 📍 <strong>Address:</strong> {activeLocation.formattedAddress}
                 <br />
-                🌐 <strong>Distance:</strong> {activeLocation.distance} km from bakery
+                🌐 <strong>Road Distance:</strong> {activeLocation.distance} km
+                {activeLocation.duration && (
+                  <>
+                    <br />
+                    ⏱️ <strong>Estimated Time:</strong> {activeLocation.duration} minutes
+                  </>
+                )}
+                {activeLocation.isRouteOptimized ? (
+                  <><br />🛣️ <strong>Route:</strong> Optimized</>
+                ) : (
+                  <><br/>🛣️ <strong>Route:</strong> Straight-line (est.)</>
+                )}
               </div>
               
               {/* Delivery Fee Display */}
@@ -581,9 +591,9 @@ const App = () => {
             {/* Additional Info */}
             <div style={{ fontSize: '12px', color: '#666', borderTop: '1px solid #eee', paddingTop: '8px' }}>
               💡 {activeLocation.deliveryMessage}
-              {deliveryInfo && (
-                <span> | Base fee: LKR {deliveryInfo.pricing.baseFee} + LKR {deliveryInfo.pricing.perKmRate}/km</span>
-              )}
+{deliveryInfo && (
+  <span> | Base fee: LKR {deliveryInfo.pricing.baseFee} + LKR {deliveryInfo.pricing.perKmRate}/km | Range: {deliveryInfo.pricing.maxDistance}km</span>
+)}
             </div>
           </div>
         )}
@@ -616,9 +626,35 @@ const App = () => {
                   {bakeryLocation.address}
                   <br />
                   <em>Delivery Hub</em>
+                  <br />
+                  <small>Route optimization enabled</small>
                 </div>
               </Popup>
             </Marker>
+          )}
+          
+          {/* Optimized Route Line */}
+          {activeLocation && bakeryLocation && activeLocation.routeGeometry && !activeLocation.outOfDeliveryRange && (
+            <Polyline
+              positions={activeLocation.routeGeometry.coordinates.map(coord => [coord[1], coord[0]])}
+              color={activeLocation.isFreeDelivery ? 'green' : 'blue'}
+              weight={6}
+              opacity={0.8}
+            />
+          )}
+
+          {/* Fallback straight line if no optimized route */}
+          {activeLocation && bakeryLocation && !activeLocation.routeGeometry && !activeLocation.outOfDeliveryRange && (
+            <Polyline
+              positions={[
+                [bakeryLocation.lat, bakeryLocation.lng],
+                [activeLocation.lat, activeLocation.lng]
+              ]}
+              color="orange"
+              weight={4}
+              opacity={0.6}
+              dashArray="10, 10"
+            />
           )}
           
           {/* Marker for searched location */}
@@ -631,7 +667,9 @@ const App = () => {
                   <hr style={{ margin: '8px 0' }} />
                   {location.formattedAddress}
                   <br />
-                  <strong>Distance:</strong> {location.distance} km
+                  <strong>Road Distance:</strong> {location.distance} km
+                  <br />
+                  <strong>Estimated Time:</strong> {location.duration} minutes
                   <br />
                   <strong>Delivery Fee:</strong> {location.isFreeDelivery ? 'FREE' : `LKR ${location.deliveryFee}`}
                   <br />
@@ -649,7 +687,9 @@ const App = () => {
                   <strong>📍 Manual Pinpoint</strong>
                   <br />
                   <hr style={{ margin: '8px 0' }} />
-                  <strong>Distance:</strong> {manualPin.distance} km
+                  <strong>Road Distance:</strong> {manualPin.distance} km
+                  <br />
+                  <strong>Estimated Time:</strong> {manualPin.duration} minutes
                   <br />
                   <strong>Delivery Fee:</strong> {manualPin.isFreeDelivery ? 'FREE' : `LKR ${manualPin.deliveryFee}`}
                   <br />
@@ -675,20 +715,6 @@ const App = () => {
               </Popup>
             </Marker>
           )}
-
-          {/* Delivery Route Line */}
-          {activeLocation && bakeryLocation && !activeLocation.outOfDeliveryRange && (
-            <Polyline
-              positions={[
-                [bakeryLocation.lat, bakeryLocation.lng],
-                [activeLocation.lat, activeLocation.lng]
-              ]}
-              color={activeLocation.isFreeDelivery ? 'green' : 'blue'}
-              weight={4}
-              opacity={0.7}
-              dashArray={activeLocation.isFreeDelivery ? '' : '10, 10'}
-            />
-          )}
         </MapContainer>
         
         {/* Manual Mode Overlay */}
@@ -706,6 +732,31 @@ const App = () => {
             fontWeight: 'bold'
           }}>
             🎯 Manual Mode: Click on map to set location
+          </div>
+        )}
+
+        {/* Route Legend */}
+        {(activeLocation && bakeryLocation && !activeLocation.outOfDeliveryRange) && (
+          <div style={{
+            position: 'absolute',
+            bottom: '10px',
+            left: '10px',
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            padding: '10px',
+            borderRadius: '4px',
+            zIndex: 1000,
+            fontSize: '12px',
+            border: '1px solid #ddd'
+          }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Route Legend:</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '3px' }}>
+              <div style={{ width: '20px', height: '3px', backgroundColor: 'blue', marginRight: '5px' }}></div>
+              <span>Optimized Route</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ width: '20px', height: '3px', backgroundColor: 'orange', marginRight: '5px', border: '1px dashed #666' }}></div>
+              <span>Straight-line (Estimate)</span>
+            </div>
           </div>
         )}
       </div>
