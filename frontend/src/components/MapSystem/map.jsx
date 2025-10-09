@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
+
 
 // Fix for default markers
 delete L.Icon.Default.prototype._getIconUrl;
@@ -24,6 +25,15 @@ const customIcon = new L.Icon({
 
 const manualPinIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const bakeryIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -53,12 +63,29 @@ const App = () => {
   const [error, setError] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [manualMode, setManualMode] = useState(false);
-  const [activeLocation, setActiveLocation] = useState(null); // Track which location is active
+  const [activeLocation, setActiveLocation] = useState(null);
+  const [orderAmount, setOrderAmount] = useState(0);
+  const [deliveryInfo, setDeliveryInfo] = useState(null);
+  const [bakeryLocation, setBakeryLocation] = useState(null);
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
 
   // Default center set to Colombo, Sri Lanka
   const defaultCenter = [6.9271, 79.8612]; // Colombo, Sri Lanka
+
+  // Fetch bakery location and delivery info on component mount
+  useEffect(() => {
+    const fetchDeliveryInfo = async () => {
+      try {
+        const response = await axios.get('http://localhost:3001/api/delivery-info');
+        setBakeryLocation(response.data.bakeryLocation);
+        setDeliveryInfo(response.data);
+      } catch (error) {
+        console.error('Error fetching delivery info:', error);
+      }
+    };
+    fetchDeliveryInfo();
+  }, []);
 
   // Fetch suggestions when user types
   useEffect(() => {
@@ -121,14 +148,13 @@ const App = () => {
     setManualMode(false);
     
     try {
-      const locationData = {
-        lat: suggestion.lat,
-        lng: suggestion.lng,
-        formattedAddress: suggestion.display_name,
-        type: 'searched'
-      };
-      setLocation(locationData);
-      setActiveLocation(locationData);
+      const response = await axios.post('http://localhost:3001/api/geocode', {
+        address: suggestion.display_name,
+        orderAmount: parseFloat(orderAmount) || 0
+      });
+
+      setLocation(response.data);
+      setActiveLocation(response.data);
       setManualPin(null);
     } catch (error) {
       setError('Failed to set location');
@@ -141,7 +167,7 @@ const App = () => {
     e.preventDefault();
     
     if (!address.trim()) {
-      setError('Please enter a delivery address');
+      setError('Please enter a delivery address in Sri Lanka');
       return;
     }
 
@@ -152,15 +178,12 @@ const App = () => {
 
     try {
       const response = await axios.post('http://localhost:3001/api/geocode', {
-        address: address.trim()
+        address: address.trim(),
+        orderAmount: parseFloat(orderAmount) || 0
       });
 
-      const locationData = {
-        ...response.data,
-        type: 'searched'
-      };
-      setLocation(locationData);
-      setActiveLocation(locationData);
+      setLocation(response.data);
+      setActiveLocation(response.data);
       setManualPin(null);
       
     } catch (err) {
@@ -175,22 +198,35 @@ const App = () => {
     }
   };
 
-  const handleMapClick = (e) => {
+  const handleMapClick = async (e) => {
     if (!manualMode) return;
 
     const { lat, lng } = e.latlng;
-    const manualLocation = {
-      lat: lat,
-      lng: lng,
-      formattedAddress: `Manual Pinpoint: ${lat.toFixed(6)}, ${lng.toFixed(6)}`,
-      type: 'manual'
-    };
+    setLoading(true);
     
-    setManualPin(manualLocation);
-    setActiveLocation(manualLocation);
-    setLocation(null);
-    setAddress(`Manual Pin: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-    setError('');
+    try {
+      const response = await axios.post('http://localhost:3001/api/calculate-delivery', {
+        lat: lat,
+        lng: lng,
+        orderAmount: parseFloat(orderAmount) || 0
+      });
+
+      const manualLocation = {
+        ...response.data.deliveryLocation,
+        ...response.data,
+        type: 'manual'
+      };
+      
+      setManualPin(manualLocation);
+      setActiveLocation(manualLocation);
+      setLocation(null);
+      setAddress(`Manual Pin: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+      setError('');
+    } catch (error) {
+      setError('Failed to calculate delivery fee for this location');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleManualMode = () => {
@@ -208,6 +244,48 @@ const App = () => {
     setAddress('');
     setError('');
     setManualMode(false);
+  };
+
+  const handleOrderAmountChange = (e) => {
+    const value = e.target.value;
+    setOrderAmount(value);
+    
+    // Recalculate delivery fee if we have an active location
+    if (activeLocation && !activeLocation.outOfDeliveryRange) {
+      setTimeout(() => {
+        recalculateDeliveryFee(value);
+      }, 500);
+    }
+  };
+
+  const recalculateDeliveryFee = async (amount) => {
+    if (!activeLocation) return;
+
+    try {
+      let response;
+      if (activeLocation.type === 'manual') {
+        response = await axios.post('http://localhost:3001/api/calculate-delivery', {
+          lat: activeLocation.lat,
+          lng: activeLocation.lng,
+          orderAmount: parseFloat(amount) || 0
+        });
+      } else {
+        response = await axios.post('http://localhost:3001/api/geocode', {
+          address: activeLocation.formattedAddress,
+          orderAmount: parseFloat(amount) || 0
+        });
+      }
+
+      if (activeLocation.type === 'manual') {
+        setManualPin(prev => ({ ...prev, ...response.data }));
+        setActiveLocation(prev => ({ ...prev, ...response.data }));
+      } else {
+        setLocation(prev => ({ ...prev, ...response.data }));
+        setActiveLocation(prev => ({ ...prev, ...response.data }));
+      }
+    } catch (error) {
+      console.error('Error recalculating delivery fee:', error);
+    }
   };
 
   // Popular Sri Lankan locations for quick selection
@@ -234,7 +312,7 @@ const App = () => {
         position: 'relative'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
-          <h1 style={{ color: '#333', margin: 0 }}> Courier Map </h1>
+          <h1 style={{ color: '#333', margin: 0 }}>🇱🇰 Sri Lanka Bakery Delivery</h1>
           
           {/* Control Buttons */}
           <div style={{ display: 'flex', gap: '10px' }}>
@@ -284,6 +362,29 @@ const App = () => {
             🎯 <strong>Manual Pinpoint Mode Active:</strong> Click anywhere on the map to set a delivery location
           </div>
         )}
+
+        {/* Order Amount Input */}
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+            🛒 Order Amount (LKR):
+          </label>
+          <input
+            type="number"
+            value={orderAmount}
+            onChange={handleOrderAmountChange}
+            placeholder="Enter your order total"
+            style={{
+              padding: '10px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              fontSize: '16px',
+              width: '200px'
+            }}
+          />
+          <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
+            Free delivery for orders above LKR 2,000!
+          </div>
+        </div>
         
         {/* Search Form */}
         <form onSubmit={handleGeocode} style={{ display: 'flex', gap: '10px', position: 'relative', marginBottom: '15px' }}>
@@ -421,22 +522,69 @@ const App = () => {
           </div>
         )}
 
-        {/* Location Info */}
+        {/* Delivery Information */}
         {activeLocation && (
           <div style={{ 
-            padding: '12px',
-            backgroundColor: activeLocation.type === 'manual' ? '#d4edda' : '#d1edff',
-            border: activeLocation.type === 'manual' ? '1px solid #c3e6cb' : '1px solid #b3d9ff',
-            borderRadius: '4px',
+            padding: '15px',
+            backgroundColor: activeLocation.outOfDeliveryRange ? '#fff3cd' : 
+                           activeLocation.isFreeDelivery ? '#d4edda' : '#d1edff',
+            border: activeLocation.outOfDeliveryRange ? '1px solid #ffeaa7' : 
+                    activeLocation.isFreeDelivery ? '1px solid #c3e6cb' : '1px solid #b3d9ff',
+            borderRadius: '8px',
             fontSize: '14px'
           }}>
-            {activeLocation.type === 'manual' ? '✅' : '📖'} <strong>
-              {activeLocation.type === 'manual' ? 'Manual Pinpoint Set!' : 'Location Found!'}
-            </strong>
-            <br />
-            📍 <strong>Address:</strong> {activeLocation.formattedAddress}
-            <br />
-            🌐 <strong>Coordinates:</strong> {activeLocation.lat.toFixed(6)}, {activeLocation.lng.toFixed(6)}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+              <div>
+                <strong>
+                  {activeLocation.type === 'manual' ? '📍 Manual Pinpoint' : '📖 Searched Location'}
+                </strong>
+                <br />
+                📍 <strong>Address:</strong> {activeLocation.formattedAddress}
+                <br />
+                🌐 <strong>Distance:</strong> {activeLocation.distance} km from bakery
+              </div>
+              
+              {/* Delivery Fee Display */}
+              <div style={{ 
+                textAlign: 'right',
+                padding: '10px',
+                backgroundColor: activeLocation.outOfDeliveryRange ? '#dc3545' : 
+                               activeLocation.isFreeDelivery ? '#28a745' : '#17a2b8',
+                color: 'white',
+                borderRadius: '6px',
+                minWidth: '150px'
+              }}>
+                {activeLocation.outOfDeliveryRange ? (
+                  <div>
+                    <strong>🚫 Not Available</strong>
+                    <br />
+                    <small>Beyond delivery range</small>
+                  </div>
+                ) : activeLocation.isFreeDelivery ? (
+                  <div>
+                    <strong>🎉 FREE DELIVERY!</strong>
+                    <br />
+                    <small>Order above LKR 2,000</small>
+                  </div>
+                ) : (
+                  <div>
+                    <strong>Delivery Fee</strong>
+                    <br />
+                    <span style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                      LKR {activeLocation.deliveryFee}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Additional Info */}
+            <div style={{ fontSize: '12px', color: '#666', borderTop: '1px solid #eee', paddingTop: '8px' }}>
+              💡 {activeLocation.deliveryMessage}
+              {deliveryInfo && (
+                <span> | Base fee: LKR {deliveryInfo.pricing.baseFee} + LKR {deliveryInfo.pricing.perKmRate}/km</span>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -445,7 +593,7 @@ const App = () => {
       <div style={{ flex: 1, position: 'relative' }}>
         <MapContainer 
           center={activeLocation ? [activeLocation.lat, activeLocation.lng] : defaultCenter} 
-          zoom={activeLocation ? 15 : 8} 
+          zoom={activeLocation ? 12 : 8} 
           style={{ height: '100%', width: '100%' }}
           scrollWheelZoom={true}
         >
@@ -457,19 +605,37 @@ const App = () => {
           {/* Map click handler for manual pinpointing */}
           <MapClickHandler onMapClick={handleMapClick} manualMode={manualMode} />
           
+          {/* Bakery Location Marker */}
+          {bakeryLocation && (
+            <Marker position={[bakeryLocation.lat, bakeryLocation.lng]} icon={bakeryIcon}>
+              <Popup>
+                <div style={{ textAlign: 'center', minWidth: '200px' }}>
+                  <strong>🏪 Our Bakery</strong>
+                  <br />
+                  <hr style={{ margin: '8px 0' }} />
+                  {bakeryLocation.address}
+                  <br />
+                  <em>Delivery Hub</em>
+                </div>
+              </Popup>
+            </Marker>
+          )}
+          
           {/* Marker for searched location */}
           {location && (
             <Marker position={[location.lat, location.lng]} icon={customIcon}>
               <Popup>
-                <div style={{ textAlign: 'center', minWidth: '200px' }}>
-                  <strong>📖 Searched Location</strong>
+                <div style={{ textAlign: 'center', minWidth: '250px' }}>
+                  <strong>📖 Delivery Location</strong>
                   <br />
                   <hr style={{ margin: '8px 0' }} />
                   {location.formattedAddress}
                   <br />
-                  <em>Lat: {location.lat.toFixed(6)}</em>
+                  <strong>Distance:</strong> {location.distance} km
                   <br />
-                  <em>Lng: {location.lng.toFixed(6)}</em>
+                  <strong>Delivery Fee:</strong> {location.isFreeDelivery ? 'FREE' : `LKR ${location.deliveryFee}`}
+                  <br />
+                  <em>{location.deliveryMessage}</em>
                 </div>
               </Popup>
             </Marker>
@@ -479,22 +645,23 @@ const App = () => {
           {manualPin && (
             <Marker position={[manualPin.lat, manualPin.lng]} icon={manualPinIcon}>
               <Popup>
-                <div style={{ textAlign: 'center', minWidth: '200px' }}>
+                <div style={{ textAlign: 'center', minWidth: '250px' }}>
                   <strong>📍 Manual Pinpoint</strong>
                   <br />
                   <hr style={{ margin: '8px 0' }} />
-                  <em>Lat: {manualPin.lat.toFixed(6)}</em>
+                  <strong>Distance:</strong> {manualPin.distance} km
                   <br />
-                  <em>Lng: {manualPin.lng.toFixed(6)}</em>
+                  <strong>Delivery Fee:</strong> {manualPin.isFreeDelivery ? 'FREE' : `LKR ${manualPin.deliveryFee}`}
+                  <br />
+                  <em>{manualPin.deliveryMessage}</em>
                   <br />
                   <br />
                   <button 
                     onClick={() => {
-                      // Reverse geocode to get address (optional enhancement)
-                      alert('Manual pinpoint confirmed!');
+                      alert('Delivery location confirmed!');
                     }}
                     style={{
-                      padding: '5px 10px',
+                      padding: '8px 16px',
                       backgroundColor: '#28a745',
                       color: 'white',
                       border: 'none',
@@ -502,11 +669,25 @@ const App = () => {
                       cursor: 'pointer'
                     }}
                   >
-                    Confirm Location
+                    Confirm Delivery
                   </button>
                 </div>
               </Popup>
             </Marker>
+          )}
+
+          {/* Delivery Route Line */}
+          {activeLocation && bakeryLocation && !activeLocation.outOfDeliveryRange && (
+            <Polyline
+              positions={[
+                [bakeryLocation.lat, bakeryLocation.lng],
+                [activeLocation.lat, activeLocation.lng]
+              ]}
+              color={activeLocation.isFreeDelivery ? 'green' : 'blue'}
+              weight={4}
+              opacity={0.7}
+              dashArray={activeLocation.isFreeDelivery ? '' : '10, 10'}
+            />
           )}
         </MapContainer>
         
