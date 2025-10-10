@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Link, useNavigate} from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const SignUp = () => {
   const [formData, setFormData] = useState({
@@ -8,24 +9,172 @@ const SignUp = () => {
     phone: '',
     password: '',
     confirmPassword: '',
-    role: 'customer',
     agreeToTerms: false
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [passwordValidation, setPasswordValidation] = useState({
+    hasLowercase: false,
+    hasUppercase: false,
+    hasNumber: false,
+    hasMinLength: false,
+    noSpaces: true
+  });
+  const [showPasswordRequirements, setShowPasswordRequirements] = useState(false);
+  const passwordRef = useRef(null);
+  const navigate = useNavigate();
+
+  const validateInput = (value, fieldName) => {
+    if (!value) return "";
+    
+    if (fieldName === "email") {
+      const emailStartRegex = /^[!@#$%^&*(),?":{}|<>\/\\]/;
+      const allowedEmailStart = /^[@.]/;
+      if (emailStartRegex.test(value) && !allowedEmailStart.test(value)) {
+        return "Email cannot start with special symbols (except @ or .)";
+      }
+      return "";
+    }
+    
+    const specialSymbolsRegex = /^[!@#$%^&*(),.?":{}|<>\/\\]/;
+    if (specialSymbolsRegex.test(value)) {
+      return `${fieldName} cannot start with special symbols`;
+    }
+    return "";
+  };
+
+  const validatePassword = (password) => {
+    const validations = {
+      hasLowercase: /[a-z]/.test(password),
+      hasUppercase: /[A-Z]/.test(password),
+      hasNumber: /\d/.test(password),
+      hasMinLength: password.length >= 8,
+      noSpaces: !/^\s|\s$/.test(password)
+    };
+    setPasswordValidation(validations);
+    return validations;
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prevState => ({
-      ...prevState,
+    
+    if (name === "password") {
+      validatePassword(value);
+    }
+    
+    if (name !== "password" && name !== "confirmPassword" && name !== "phone") {
+      if (value) {
+        const validationError = validateInput(value, name);
+        if (validationError) {
+          setErrors(prev => ({ ...prev, [name]: validationError }));
+          return;
+        } else {
+          setErrors(prev => {
+            const newErrors = { ...prev };
+            delete newErrors[name];
+            return newErrors;
+          });
+        }
+      }
+    }
+    
+    setFormData(prev => ({
+      ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Sign up attempt with:', formData);
-    // Here you would typically handle the sign up logic
+    
+    // Basic validation
+    const newErrors = {};
+    if (!formData.name) newErrors.name = "Full name is required";
+    if (!formData.email) newErrors.email = "Email is required";
+    if (!formData.phone) newErrors.phone = "Phone number is required";
+    if (!formData.password) newErrors.password = "Password is required";
+    if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+    }
+    if (!formData.agreeToTerms) {
+      newErrors.agreeToTerms = "You must agree to the terms and conditions";
+    }
+
+    // Password validation
+    const passwordValid = validatePassword(formData.password);
+    if (!passwordValid.hasLowercase) {
+      newErrors.password = "Password must contain a lowercase letter";
+    } else if (!passwordValid.hasUppercase) {
+      newErrors.password = "Password must contain an uppercase letter";
+    } else if (!passwordValid.hasNumber) {
+      newErrors.password = "Password must contain a number";
+    } else if (!passwordValid.hasMinLength) {
+      newErrors.password = "Password must be at least 8 characters long";
+    } else if (!passwordValid.noSpaces) {
+      newErrors.password = "Password cannot have leading or trailing spaces";
+    }
+    
+    // Input validation for name and email
+    const fieldsToValidate = ["name", "email"];
+    fieldsToValidate.forEach(field => {
+      if (formData[field]) {
+        const error = validateInput(formData[field], field);
+        if (error) newErrors[field] = error;
+      }
+    });
+    
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) return;
+    
+    setIsLoading(true);
+    
+    try {
+      // Check if email already exists
+      const emailExists = await axios.get(`http://localhost:5000/Users/email/${formData.email}`);
+      if (emailExists.data.user && emailExists.data.user.length > 0) {
+        setErrors({ email: 'Email already registered' });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Register the user for bakery system
+      await axios.post("http://localhost:5000/Users", {
+        name: String(formData.name),
+        email: String(formData.email),
+        phone: String(formData.phone),
+        password: String(formData.password),
+        role: 'customer', // Default role for bakery system
+        isActive: true,
+        agreeToTerms: formData.agreeToTerms
+      });
+      
+      setIsSuccess(true);
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        password: "",
+        confirmPassword: "",
+        agreeToTerms: false
+      });
+      
+      setTimeout(() => {
+        setIsSuccess(false);
+        navigate('/Login'); 
+      }, 3000);
+    } catch (error) {
+      console.error("Signup error:", error);
+      if (error.response && error.response.data) {
+        setErrors({ server: error.response.data.message || "Registration failed" });
+      } else {
+        setErrors({ server: "Network error. Please try again." });
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -103,6 +252,12 @@ const SignUp = () => {
               <h2 className="text-2xl font-bold text-amber-800">Create Account</h2>
               <p className="text-amber-600">Join our bakery management system</p>
             </div>
+
+            {errors.server && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-xl text-center">
+                {errors.server}
+              </div>
+            )}
             
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Full Name */}
@@ -117,9 +272,10 @@ const SignUp = () => {
                   placeholder="Enter your full name"
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150"
+                  className={`w-full px-4 py-2 border ${errors.name ? 'border-red-500' : 'border-amber-300'} rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150`}
                   required
                 />
+                {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
               </div>
 
               {/* Email */}
@@ -134,9 +290,10 @@ const SignUp = () => {
                   placeholder="your@email.com"
                   value={formData.email}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150"
+                  className={`w-full px-4 py-2 border ${errors.email ? 'border-red-500' : 'border-amber-300'} rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150`}
                   required
                 />
+                {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
               </div>
 
               {/* Phone Number */}
@@ -151,14 +308,14 @@ const SignUp = () => {
                   placeholder="+1 (555) 123-4567"
                   value={formData.phone}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150"
+                  className={`w-full px-4 py-2 border ${errors.phone ? 'border-red-500' : 'border-amber-300'} rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150`}
                   required
                 />
+                {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone}</p>}
               </div>
 
-            
               {/* Password */}
-              <div>
+              <div className="relative">
                 <label htmlFor="password" className="block text-sm font-medium text-amber-700 mb-1">
                   Password
                 </label>
@@ -170,7 +327,13 @@ const SignUp = () => {
                     placeholder="Create a password"
                     value={formData.password}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150"
+                    onFocus={() => setShowPasswordRequirements(true)}
+                    onBlur={() => {
+                      if (!formData.password) {
+                        setShowPasswordRequirements(false);
+                      }
+                    }}
+                    className={`w-full px-4 py-2 border ${errors.password ? 'border-red-500' : 'border-amber-300'} rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150`}
                     required
                   />
                   <button
@@ -185,6 +348,34 @@ const SignUp = () => {
                     )}
                   </button>
                 </div>
+                {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
+                
+                {(showPasswordRequirements || formData.password) && (
+                  <div className="absolute z-10 mt-1 w-full p-2 bg-white border border-gray-200 rounded-lg shadow-lg">
+                    <div className="grid grid-cols-2 gap-1 text-xs text-gray-600">
+                      <p className={`flex items-center ${passwordValidation.hasLowercase ? "text-green-500" : ""}`}>
+                        <span className="mr-1">{passwordValidation.hasLowercase ? "✓" : "•"}</span>
+                        Lowercase
+                      </p>
+                      <p className={`flex items-center ${passwordValidation.hasUppercase ? "text-green-500" : ""}`}>
+                        <span className="mr-1">{passwordValidation.hasUppercase ? "✓" : "•"}</span>
+                        Uppercase
+                      </p>
+                      <p className={`flex items-center ${passwordValidation.hasNumber ? "text-green-500" : ""}`}>
+                        <span className="mr-1">{passwordValidation.hasNumber ? "✓" : "•"}</span>
+                        Number
+                      </p>
+                      <p className={`flex items-center ${passwordValidation.hasMinLength ? "text-green-500" : ""}`}>
+                        <span className="mr-1">{passwordValidation.hasMinLength ? "✓" : "•"}</span>
+                        8+ chars
+                      </p>
+                      <p className={`flex items-center ${passwordValidation.noSpaces ? "text-green-500" : ""}`}>
+                        <span className="mr-1">{passwordValidation.noSpaces ? "✓" : "•"}</span>
+                        No spaces
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Confirm Password */}
@@ -200,7 +391,7 @@ const SignUp = () => {
                     placeholder="Confirm your password"
                     value={formData.confirmPassword}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150"
+                    className={`w-full px-4 py-2 border ${errors.confirmPassword ? 'border-red-500' : 'border-amber-300'} rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-150`}
                     required
                   />
                   <button
@@ -215,6 +406,7 @@ const SignUp = () => {
                     )}
                   </button>
                 </div>
+                {errors.confirmPassword && <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>}
               </div>
 
               {/* Terms and Conditions */}
@@ -225,7 +417,7 @@ const SignUp = () => {
                   type="checkbox"
                   checked={formData.agreeToTerms}
                   onChange={handleChange}
-                  className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-amber-300 rounded mt-1"
+                  className={`h-4 w-4 ${errors.agreeToTerms ? 'text-red-500 border-red-500' : 'text-amber-600 border-amber-300'} focus:ring-amber-500 rounded mt-1`}
                   required
                 />
                 <label htmlFor="agreeToTerms" className="text-sm text-amber-700">
@@ -239,13 +431,21 @@ const SignUp = () => {
                   </a>
                 </label>
               </div>
+              {errors.agreeToTerms && <p className="text-sm text-red-600">{errors.agreeToTerms}</p>}
               
               <button
                 type="submit"
-                className="w-full bg-amber-600 text-white py-3 px-4 rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition duration-150 font-medium"
+                disabled={isLoading}
+                className="w-full bg-amber-600 text-white py-3 px-4 rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition duration-150 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create Account
+                {isLoading ? 'Creating Account...' : 'Create Account'}
               </button>
+
+              {isSuccess && (
+                <div className="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-xl text-center">
+                  Account created successfully! Redirecting to login...
+                </div>
+              )}
             </form>
             
             <div className="mt-6 text-center">
