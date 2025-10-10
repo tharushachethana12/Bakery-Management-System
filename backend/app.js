@@ -4,13 +4,15 @@ require('dotenv').config();
 
 const express = require("express");
 const mongoose = require("mongoose");
-const router = require("./Routes/UserRoutes");
+const userrouter = require("./Routes/UserRoutes");
+const paymentrouter = require("./Routes/PaymentRoute");
 
 const app = express();
 
 //middleware
 app.use(express.json());
-app.use("/users",router);
+app.use("/users",userrouter);
+app.use("/Payments",paymentrouter);
 
 const mongoURL = process.env.MONGO_URI;
 
