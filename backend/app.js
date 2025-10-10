@@ -1,24 +1,40 @@
-// mongodb username - sahana2002 & mongodb password - QhO31A3P9hnHysvq
-
 require('dotenv').config(); 
 
 const express = require("express");
 const mongoose = require("mongoose");
-const userrouter = require("./Routes/UserRoutes");
-const paymentrouter = require("./Routes/PaymentRoute");
+const cors = require("cors"); // Add CORS for frontend communication
 
 const app = express();
 
-//middleware
+// Middleware
+app.use(cors());
 app.use(express.json());
-app.use("/users",userrouter);
-app.use("/Payments",paymentrouter);
 
-const mongoURL = process.env.MONGO_URI;
+// Routes
+app.use("/api/users", require("./Routes/UserRoutes"));
+// app.use("/Payments", require("./Routes/PaymentRoute")); // Uncomment when ready
 
-mongoose.connect("mongodb+srv://sahana2002:QhO31A3P9hnHysvq@cluster0.wptflp0.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", {useNewUrlParser: true, useUnifiedTopology: true})
-.then(()=> console.log("connected to mongoDB"))
-.then(()=> {
-    app.listen(4000);
+// Health check route
+app.get("/api/health", (req, res) => {
+    res.status(200).json({ 
+        success: true,
+        message: "Server is running successfully",
+        timestamp: new Date().toISOString()
+    });
+});
+
+// MongoDB connection
+const mongoURL = process.env.MONGO_URI || "mongodb+srv://sahana2002:QhO31A3P9hnHysvq@cluster0.wptflp0.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+
+mongoose.connect(mongoURL, { 
+    useNewUrlParser: true, 
+    useUnifiedTopology: true 
 })
-.catch((err)=> console.log(("error connecting",err))); 
+.then(() => console.log("Connected to MongoDB"))
+.then(() => {
+    const PORT = process.env.PORT || 4000;
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+})
+.catch((err) => console.log("Error connecting to MongoDB:", err));
