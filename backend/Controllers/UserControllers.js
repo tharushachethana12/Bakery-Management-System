@@ -7,17 +7,17 @@ const getAllUsers = async (req, res, next)=> {
 
     //get all users
     try{
-        users = await User.find();
+        Users = await User.find();
     }catch (err) {
         console.log(err);
     }
 
     //not found
-    if(!users){
+    if(!Users){
         return res.status(404).json({message: "User not found"});
     }
     //display all users
-    return res.status(200).json({users});
+    return res.status(200).json({Users});
 };
 
 const addUsers = async (req, res, next) => {
@@ -84,19 +84,19 @@ const updateUser = async (req, res, next) => {
 
 const deleteUser = async (req, res, next) => {
     const id = req.params.id;
-    let user;
+    let Users;
 
     try {
-        users = await User.findByIdAndDelete(id);
+        Users = await User.findByIdAndDelete(id);
     } catch (err) {
         console.log(err);
     }
 
-    if (!users) {
+    if (!Users) {
         return res.status(404).json({ message: "Unable to delete user" });
     }
 
-    return res.status(200).json({users});
+    return res.status(200).json({Users});
 };
 
 
