@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
@@ -13,24 +13,6 @@ L.Icon.Default.mergeOptions({
 });
 
 // Custom icons
-const customIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
-const manualPinIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
 const bakeryIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -40,37 +22,38 @@ const bakeryIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
-// Component for handling map clicks
-function MapClickHandler({ onMapClick, manualMode }) {
-  useMapEvents({
-    click: (e) => {
-      if (manualMode) {
-        onMapClick(e);
-      }
-    },
-  });
-  return null;
-}
+const deliveryIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
+// Tab components
+const TABS = {
+  ADD_LOCATIONS: 'add_locations',
+  DELIVERY_LIST: 'delivery_list',
+  ORDERS: 'orders'
+};
 
 const App = () => {
   const [address, setAddress] = useState('');
   const [suggestions, setSuggestions] = useState([]);
-  const [location, setLocation] = useState(null);
-  const [manualPin, setManualPin] = useState(null);
+  const [deliveryLocations, setDeliveryLocations] = useState([]);
+  const [bakeryLocation, setBakeryLocation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [manualMode, setManualMode] = useState(false);
-  const [activeLocation, setActiveLocation] = useState(null);
   const [orderAmount, setOrderAmount] = useState(0);
-  const [bakeryLocation, setBakeryLocation] = useState(null);
   const [orders, setOrders] = useState([]);
-  const [showOrders, setShowOrders] = useState(false);
+  const [activeTab, setActiveTab] = useState(TABS.ADD_LOCATIONS);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
+  const debounceRef = useRef(null);
 
   const defaultCenter = [6.9271, 79.8612];
 
@@ -84,8 +67,37 @@ const App = () => {
       }
     };
     fetchDeliveryInfo();
+    loadDeliveryLocations();
     loadOrders();
   }, []);
+
+  // Click outside handler to close suggestions
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        suggestionsRef.current && 
+        !suggestionsRef.current.contains(event.target) &&
+        inputRef.current && 
+        !inputRef.current.contains(event.target)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const loadDeliveryLocations = async () => {
+    try {
+      const response = await axios.get('http://localhost:3001/api/delivery-locations');
+      setDeliveryLocations(response.data);
+    } catch (error) {
+      console.error('Error loading delivery locations:', error);
+    }
+  };
 
   const loadOrders = async () => {
     try {
@@ -96,111 +108,92 @@ const App = () => {
     }
   };
 
-  // ... (keep all the useEffect and helper functions the same until handleGeocode)
+  const fetchSuggestions = async (query) => {
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
 
-  const handleGeocode = async (e) => {
-    e.preventDefault();
+    setSuggestionsLoading(true);
+    try {
+      const response = await axios.get('http://localhost:3001/api/suggest', {
+        params: { q: query }
+      });
+      setSuggestions(response.data);
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+      setSuggestions([]);
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion) => {
+    setAddress(suggestion.display_name);
+    setShowSuggestions(false);
+  };
+
+  const addDeliveryLocation = async (e) => {
+    if (e) e.preventDefault();
     
     if (!address.trim()) {
-      setError('Please enter a delivery address in Sri Lanka');
+      setError('Please enter an address');
       return;
     }
 
     setLoading(true);
     setError('');
     setShowSuggestions(false);
-    setManualMode(false);
-
+    
     try {
-      const response = await axios.post('http://localhost:3001/api/geocode', {
+      const response = await axios.post('http://localhost:3001/api/add-location', {
         address: address.trim(),
         orderAmount: parseFloat(orderAmount) || 0
       });
 
-      setLocation(response.data);
-      setActiveLocation(response.data);
-      setManualPin(null);
-      
-    } catch (err) {
-      const errorMessage = err.response?.data?.error || 'Failed to find location. Please try again.';
-      setError(errorMessage);
-      setLocation(null);
-      setActiveLocation(null);
+      await loadDeliveryLocations();
+      setAddress('');
+    } catch (error) {
+      setError(error.response?.data?.error || 'Failed to add location');
     } finally {
       setLoading(false);
     }
   };
 
-   const toggleManualMode = () => {
-    setManualMode(!manualMode);
-    if (!manualMode) {
-      setError('');
-      setShowSuggestions(false);
+  const removeDeliveryLocation = async (locationId) => {
+    try {
+      await axios.delete(`http://localhost:3001/api/delivery-locations/${locationId}`);
+      await loadDeliveryLocations();
+    } catch (error) {
+      console.error('Error removing location:', error);
     }
   };
 
-  const clearAllMarkers = () => {
-    setLocation(null);
-    setManualPin(null);
-    setActiveLocation(null);
-    setAddress('');
-    setError('');
-    setManualMode(false);
-  };
-
-    const handleMapClick = async (e) => {
-    if (!manualMode) return;
-
-    const { lat, lng } = e.latlng;
-    setLoading(true);
-    
+  const clearAllLocations = async () => {
     try {
-      const response = await axios.post('http://localhost:3001/api/calculate-delivery', {
-        lat: lat,
-        lng: lng,
-        orderAmount: parseFloat(orderAmount) || 0
-      });
-
-      const manualLocation = {
-        ...response.data.deliveryLocation,
-        ...response.data,
-        type: 'manual'
-      };
-      
-      setManualPin(manualLocation);
-      setActiveLocation(manualLocation);
-      setLocation(null);
-      setAddress(`Manual Pin: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+      await axios.delete('http://localhost:3001/api/delivery-locations');
+      await loadDeliveryLocations();
       setError('');
     } catch (error) {
-      setError('Failed to calculate delivery fee for this location');
-    } finally {
-      setLoading(false);
+      console.error('Error clearing locations:', error);
     }
   };
 
-  // Remove the recalculateDeliveryFee function and replace with:
-  const handleOrderAmountChange = (e) => {
-    const value = e.target.value;
-    setOrderAmount(value);
-  };
-
-  // Create order from current location
   const createOrder = async () => {
-    if (!activeLocation) {
-      setError('Please select a delivery location first');
+    if (deliveryLocations.length === 0) {
+      setError('Please add at least one delivery location');
       return;
     }
 
     setLoading(true);
     try {
       const response = await axios.post('http://localhost:3001/api/orders', {
-        deliveryLocation: activeLocation,
+        deliveryLocations: deliveryLocations,
         orderAmount: parseFloat(orderAmount) || 0
       });
 
       await loadOrders();
-      setShowOrders(true);
+      setActiveTab(TABS.ORDERS);
       setError('');
     } catch (error) {
       setError(error.response?.data?.error || 'Failed to create order');
@@ -209,7 +202,6 @@ const App = () => {
     }
   };
 
-  // Update order status
   const updateOrderStatus = async (orderId, status) => {
     try {
       await axios.patch(`http://localhost:3001/api/orders/${orderId}/status`, { status });
@@ -245,51 +237,47 @@ const App = () => {
     }
   };
 
-  const popularLocations = [
-    "Galle Face Green, Colombo",
-    "Pettah Market, Colombo",
-    "Mount Lavinia Beach",
-    "Kandy City Center",
-    "Negombo Beach"
-  ];
+  // Tab navigation
+  const TabButton = ({ tab, label, count }) => (
+    <button
+      onClick={() => setActiveTab(tab)}
+      style={{
+        padding: '10px 16px',
+        backgroundColor: activeTab === tab ? '#007bff' : 'transparent',
+        color: activeTab === tab ? 'white' : '#333',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 'bold',
+        marginRight: '5px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}
+    >
+      {label}
+      {count > 0 && (
+        <span style={{
+          backgroundColor: activeTab === tab ? 'rgba(255,255,255,0.3)' : '#007bff',
+          color: activeTab === tab ? 'white' : 'white',
+          borderRadius: '12px',
+          padding: '2px 8px',
+          fontSize: '12px',
+          minWidth: '20px'
+        }}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
 
-  return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px', backgroundColor: '#f8f9fa', borderBottom: '1px solid #dee2e6' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <h1 style={{ color: '#333', margin: 0, fontSize: '24px' }}>Bakery Delivery</h1>
-          <button 
-            onClick={() => setShowOrders(!showOrders)}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: showOrders ? '#6c757d' : '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            {showOrders ? 'Hide Orders' : `Show Orders (${orders.length})`}
-          </button>
-        </div>
-
-        {!showOrders ? (
+  // Render different tab content
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case TABS.ADD_LOCATIONS:
+        return (
           <>
-            {/* Map interface remains the same */}
-            {manualMode && (
-              <div style={{ 
-                padding: '10px',
-                backgroundColor: '#d1edff',
-                border: '1px solid #b3d9ff',
-                borderRadius: '4px',
-                marginBottom: '15px',
-                fontSize: '14px'
-              }}>
-                <strong>Manual Pinpoint Mode Active:</strong> Click anywhere on the map to set a delivery location
-              </div>
-            )}
-
             <div style={{ marginBottom: '10px' }}>
               <label style={{ display: 'block', marginBottom: '3px', fontWeight: 'bold', fontSize: '14px' }}>
                 Order Amount (LKR):
@@ -297,7 +285,7 @@ const App = () => {
               <input
                 type="number"
                 value={orderAmount}
-                onChange={handleOrderAmountChange}
+                onChange={(e) => setOrderAmount(e.target.value)}
                 placeholder="Enter your order total"
                 style={{
                   padding: '8px',
@@ -311,28 +299,47 @@ const App = () => {
                 Free delivery for orders above LKR 2,000!
               </div>
             </div>
-            
-            <form onSubmit={handleGeocode} style={{ display: 'flex', gap: '8px', position: 'relative', marginBottom: '10px' }}>
+
+            <form onSubmit={addDeliveryLocation} style={{ display: 'flex', gap: '8px', position: 'relative', marginBottom: '10px' }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <input
                   ref={inputRef}
                   type="text"
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  onFocus={() => address.length >= 2 && setShowSuggestions(true)}
-                  placeholder="Type an address or use manual pinpoint mode..."
+                  onChange={(e) => {
+                    setAddress(e.target.value);
+                    
+                    // Clear previous timeout
+                    if (debounceRef.current) {
+                      clearTimeout(debounceRef.current);
+                    }
+                    
+                    // Set new timeout for debouncing
+                    debounceRef.current = setTimeout(() => {
+                      if (e.target.value.length >= 2) {
+                        fetchSuggestions(e.target.value);
+                        setShowSuggestions(true);
+                      } else {
+                        setShowSuggestions(false);
+                      }
+                    }, 300);
+                  }}
+                  onFocus={() => {
+                    if (address.length >= 2) {
+                      setShowSuggestions(true);
+                    }
+                  }}
+                  placeholder="Enter delivery address in Sri Lanka..."
                   style={{
                     width: '100%',
                     padding: '12px',
                     border: '1px solid #ddd',
                     borderRadius: '4px',
-                    fontSize: '16px',
-                    backgroundColor: manualMode ? '#f8f9fa' : 'white'
+                    fontSize: '16px'
                   }}
-                  disabled={manualMode}
                 />
                 
-                {showSuggestions && !manualMode && (
+                {showSuggestions && (
                   <div 
                     ref={suggestionsRef}
                     style={{
@@ -384,103 +391,40 @@ const App = () => {
               
               <button 
                 type="submit"
-                disabled={loading || manualMode}
+                disabled={loading}
                 style={{
                   padding: '8px 16px',
-                  backgroundColor: manualMode ? '#ccc' : (loading ? '#6c757d' : '#007bff'),
+                  backgroundColor: loading ? '#6c757d' : '#007bff',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
-                  cursor: (loading || manualMode) ? 'not-allowed' : 'pointer',
+                  cursor: loading ? 'not-allowed' : 'pointer',
                   fontSize: '14px',
                   minWidth: '120px'
                 }}
               >
-                {loading ? 'Searching...' : 'Search Address'}
+                {loading ? 'Adding...' : 'Add Location'}
               </button>
 
               <button 
                 type="button"
-                onClick={toggleManualMode}
+                onClick={clearAllLocations}
+                disabled={deliveryLocations.length === 0}
                 style={{
                   padding: '8px 12px',
-                  backgroundColor: manualMode ? '#28a745' : '#6c757d',
+                  backgroundColor: deliveryLocations.length === 0 ? '#ccc' : '#dc3545',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
-                  cursor: 'pointer',
+                  cursor: deliveryLocations.length === 0 ? 'not-allowed' : 'pointer',
                   fontSize: '12px'
                 }}
               >
-                {manualMode ? 'Manual Mode ON' : 'Manual Pinpoint'}
-              </button>
-
-              <button 
-                type="button"
-                onClick={clearAllMarkers}
-                style={{
-                  padding: '8px 12px',
-                  backgroundColor: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
-              >
-                Clear
+                Clear All
               </button>
             </form>
 
-            {activeLocation && !activeLocation.outOfDeliveryRange && (
-              <div style={{ marginBottom: '10px' }}>
-                <button 
-                  onClick={createOrder}
-                  disabled={loading}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#28a745',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {loading ? 'Creating Order...' : 'Create Delivery Order'}
-                </button>
-              </div>
-            )}
-
-            {!manualMode && (
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>
-                  <strong>Popular locations:</strong>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                  {popularLocations.map((location, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => setAddress(location)}
-                      style={{
-                        padding: '4px 8px',
-                        backgroundColor: '#e9ecef',
-                        border: '1px solid #dee2e6',
-                        borderRadius: '12px',
-                        fontSize: '10px',
-                        cursor: 'pointer'
-                      }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = '#007bff'}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = '#e9ecef'}
-                    >
-                      {location}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            
 
             {error && (
               <div style={{ 
@@ -496,13 +440,165 @@ const App = () => {
               </div>
             )}
           </>
-        ) : (
-          // Orders View (keep this the same)
+        );
+
+      case TABS.DELIVERY_LIST:
+        return (
+<div>
+<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+  <h3 style={{ margin: 0 }}>Delivery Locations ({deliveryLocations.length})</h3>
+  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+    {deliveryLocations.length > 0 && (
+      <>
+        <button 
+          onClick={createOrder}
+          disabled={loading}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: loading ? '#6c757d' : '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: '14px',
+            fontWeight: 'bold'
+          }}
+        >
+          {loading ? 'Creating...' : `Create Order (${deliveryLocations.length})`}
+        </button>
+        <button 
+          onClick={clearAllLocations}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: '#dc3545',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px'
+          }}
+        >
+          Clear All
+        </button>
+      </>
+    )}
+  </div>
+</div>
+
+            {deliveryLocations.length === 0 ? (
+              <div style={{ 
+                padding: '40px 20px', 
+                textAlign: 'center', 
+                color: '#666',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '8px',
+                border: '2px dashed #ddd'
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '10px' }}>📍</div>
+                <h4 style={{ margin: '0 0 10px 0' }}>No Delivery Locations Added</h4>
+                <p style={{ margin: 0, fontSize: '14px' }}>
+                  Switch to "Add Locations" tab to add delivery addresses
+                </p>
+              </div>
+            ) : (
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {deliveryLocations.map(location => (
+                  <div key={location.id} style={{ 
+                    padding: '15px', 
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                    marginBottom: '10px',
+                    backgroundColor: '#fff',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '8px',
+                          marginBottom: '8px'
+                        }}>
+                          <div style={{ 
+                            width: '24px', 
+                            height: '24px', 
+                            backgroundColor: '#007bff',
+                            color: 'white',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '12px',
+                            fontWeight: 'bold'
+                          }}>
+                            {location.id}
+                          </div>
+                          <div style={{ fontWeight: 'bold', fontSize: '16px' }}>{location.name}</div>
+                        </div>
+                        
+                        <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>
+                          {location.address}
+                        </div>
+                        
+                        <div style={{ display: 'flex', gap: '15px', fontSize: '13px' }}>
+                          <div>
+                            <strong>Distance:</strong> {location.distance} km
+                          </div>
+                          <div>
+                            <strong>Fee:</strong> 
+                            <span style={{ 
+                              color: location.isFreeDelivery ? '#28a745' : '#333',
+                              fontWeight: location.isFreeDelivery ? 'bold' : 'normal'
+                            }}>
+                              {location.isFreeDelivery ? ' FREE' : ` LKR ${location.deliveryFee}`}
+                            </span>
+                          </div>
+                          <div>
+                            <strong>Est. Time:</strong> {location.duration} min
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <button 
+                        onClick={() => removeDeliveryLocation(location.id)}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+
+      case TABS.ORDERS:
+        return (
           <div>
-            <h2 style={{ marginBottom: '15px' }}>Delivery Orders ({orders.length})</h2>
+            <h3 style={{ marginBottom: '15px' }}>Delivery Orders ({orders.length})</h3>
             {orders.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
-                No orders yet. Create your first delivery order!
+              <div style={{ 
+                padding: '40px 20px', 
+                textAlign: 'center', 
+                color: '#666',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '8px',
+                border: '2px dashed #ddd'
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '10px' }}>📦</div>
+                <h4 style={{ margin: '0 0 10px 0' }}>No Orders Yet</h4>
+                <p style={{ margin: 0, fontSize: '14px' }}>
+                  Add delivery locations and create your first order!
+                </p>
               </div>
             ) : (
               <div style={{ display: 'grid', gap: '15px', maxHeight: '400px', overflowY: 'auto' }}>
@@ -517,11 +613,16 @@ const App = () => {
                       <div>
                         <strong>Order #{order.id}</strong>
                         <br />
-                        <strong>Address:</strong> {order.deliveryLocation.formattedAddress}
-                        <br />
-                        <strong>Distance:</strong> {order.deliveryLocation.distance} km
+                        <strong>Locations:</strong> {order.deliveryLocations.length}
                         <br />
                         <strong>Order Amount:</strong> LKR {order.orderAmount}
+                        <div style={{ marginTop: '5px', fontSize: '12px' }}>
+                          {order.deliveryLocations.map((loc, index) => (
+                            <div key={index}>
+                              • {loc.name} - {loc.distance}km - {loc.isFreeDelivery ? 'FREE' : `LKR ${loc.deliveryFee}`}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                       <div style={{ 
                         padding: '8px 12px', 
@@ -559,13 +660,62 @@ const App = () => {
               </div>
             )}
           </div>
-        )}
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '10px', backgroundColor: '#f8f9fa', borderBottom: '1px solid #dee2e6' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h1 style={{ color: '#333', margin: 0, fontSize: '24px' }}>Bakery Delivery</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ 
+              padding: '4px 8px', 
+              backgroundColor: '#28a745', 
+              color: 'white', 
+              borderRadius: '12px',
+              fontSize: '12px',
+              fontWeight: 'bold'
+            }}>
+              {deliveryLocations.length} Locations
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div style={{ 
+          display: 'flex', 
+          borderBottom: '2px solid #dee2e6',
+          marginBottom: '15px'
+        }}>
+          <TabButton 
+            tab={TABS.ADD_LOCATIONS} 
+            label="Add Locations" 
+          />
+          <TabButton 
+            tab={TABS.DELIVERY_LIST} 
+            label="Delivery List" 
+            count={deliveryLocations.length} 
+          />
+          <TabButton 
+            tab={TABS.ORDERS} 
+            label="Orders" 
+            count={orders.length} 
+          />
+        </div>
+
+        {/* Tab Content */}
+        {renderTabContent()}
       </div>
 
       <div style={{ flex: 1, position: 'relative' }}>
         <MapContainer 
-          center={activeLocation ? [activeLocation.lat, activeLocation.lng] : defaultCenter} 
-          zoom={activeLocation ? 15 : 8} 
+          center={deliveryLocations.length > 0 ? [deliveryLocations[0].lat, deliveryLocations[0].lng] : defaultCenter} 
+          zoom={deliveryLocations.length > 0 ? 12 : 8} 
           style={{ height: '100%', width: '100%' }}
           scrollWheelZoom={true}
         >
@@ -573,8 +723,6 @@ const App = () => {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          
-          <MapClickHandler onMapClick={handleMapClick} manualMode={manualMode} />
           
           {bakeryLocation && (
             <Marker position={[bakeryLocation.lat, bakeryLocation.lng]} icon={bakeryIcon}>
@@ -588,15 +736,17 @@ const App = () => {
             </Marker>
           )}
           
-          {/* REMOVED ALL POLYLINE CODE - This was causing slowness */}
-          
-          {location && (
-            <Marker position={[location.lat, location.lng]} icon={customIcon}>
+          {deliveryLocations.map(location => (
+            <Marker 
+              key={location.id} 
+              position={[location.lat, location.lng]} 
+              icon={deliveryIcon}
+            >
               <Popup>
                 <div style={{ textAlign: 'center', minWidth: '250px' }}>
-                  <strong>Delivery Location</strong>
+                  <strong>{location.name}</strong>
                   <br />
-                  {location.formattedAddress}
+                  {location.address}
                   <br />
                   <strong>Distance:</strong> {location.distance} km
                   <br />
@@ -604,39 +754,8 @@ const App = () => {
                 </div>
               </Popup>
             </Marker>
-          )}
-          
-          {manualPin && (
-            <Marker position={[manualPin.lat, manualPin.lng]} icon={manualPinIcon}>
-              <Popup>
-                <div style={{ textAlign: 'center', minWidth: '250px' }}>
-                  <strong>Manual Pinpoint</strong>
-                  <br />
-                  <strong>Distance:</strong> {manualPin.distance} km
-                  <br />
-                  <strong>Delivery Fee:</strong> {manualPin.isFreeDelivery ? 'FREE' : `LKR ${manualPin.deliveryFee}`}
-                </div>
-              </Popup>
-            </Marker>
-          )}
+          ))}
         </MapContainer>
-        
-        {manualMode && (
-          <div style={{
-            position: 'absolute',
-            top: '10px',
-            right: '10px',
-            backgroundColor: 'rgba(40, 167, 69, 0.9)',
-            color: 'white',
-            padding: '10px',
-            borderRadius: '4px',
-            zIndex: 1000,
-            fontSize: '14px',
-            fontWeight: 'bold'
-          }}>
-            Manual Mode: Click on map to set location
-          </div>
-        )}
       </div>
     </div>
   );
