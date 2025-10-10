@@ -239,7 +239,7 @@ const BakeryHome = () => {
         )}
       </header>
 
-      {/* Full-screen Hero Section with Slideshow - Image Left, Content Right */}
+
       <section className="relative h-screen bg-white">
         <div className="h-full flex flex-col md:flex-row">
           {/* Left Side - Image Slideshow */}
