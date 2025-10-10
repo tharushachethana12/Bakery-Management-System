@@ -1,5 +1,3 @@
-// mongodb username - sahana2002 & mongodb password - QhO31A3P9hnHysvq
-
 require('dotenv').config(); 
 
 const express = require("express");
@@ -10,7 +8,8 @@ const cakeRoute = require("./Routes/CakeRoute");
 
 const app = express();
 
-//middleware
+// Middleware
+app.use(cors());
 app.use(express.json());
 app.use("/users",userrouter);
 app.use("/cakes",cakeRoute);
@@ -23,4 +22,4 @@ mongoose.connect("mongodb+srv://sahana2002:QhO31A3P9hnHysvq@cluster0.wptflp0.mon
 .then(()=> {
     app.listen(4000);
 })
-.catch((err)=> console.log(("error connecting",err))); 
+.catch((err) => console.log("Error connecting to MongoDB:", err));
