@@ -18,6 +18,7 @@ function App() {
           <Routes>
           <Route path="/" element={<Signup/>} />
           <Route path="/Login" element={<Login />} />
+          <Route path="/Signup" element={<Signup />} /> 
           </Routes>
         </div>
         {/* <Navbar /> */}
@@ -28,4 +29,4 @@ function App() {
   )
 }
 
-export default App
+export default App;
