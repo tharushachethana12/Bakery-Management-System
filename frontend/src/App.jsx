@@ -7,6 +7,7 @@ import CakeModel from './components/CakeModel/CakeModel'
 import Map from './components/MapSystem/map'
 import BreadSec from './components/Purchasable/BreadsPage'
 import PastriesSec from './components/Purchasable/PastriesPage'
+import CardPayment from './components/Payments/CardPayment'
 import About from './components/Landingpage/About'
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
         <Route path="/pastries" element={<PastriesSec />} />
         <Route path="/cakes" element={<CakeModel />} />
         <Route path="/map" element={<Map />} />
+        <Route path="/payment" element={<CardPayment />} />
         <Route path="/about" element={<About />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
