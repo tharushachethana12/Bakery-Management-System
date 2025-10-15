@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TopNavbar from '../TopNavbar';
 
 const BakeryHome = () => {
   // State for cart items count
@@ -166,78 +167,7 @@ const BakeryHome = () => {
 
   return (
     <div className="min-h-screen bg-amber-50">
-      {/* Header */}
-      <header className="bg-amber-800 text-amber-50 py-4 px-6 sticky top-0 z-50 shadow-md">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          {/* Logo and Name */}
-          <div className="flex items-center">
-            <div className="h-10 w-10 rounded-full bg-amber-600 flex items-center justify-center mr-3">
-              <span className="text-xl">🍞</span>
-            </div>
-            <h1 className="text-xl font-bold">Sweet Dreams Bakery</h1>
-          </div>
-
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-8">
-            <a href="#" className="hover:text-amber-200 transition-colors">Home</a>
-            <a href="#" className="hover:text-amber-200 transition-colors">Products</a>
-            <a href="#" className="hover:text-amber-200 transition-colors">About</a>
-            <a href="#" className="hover:text-amber-200 transition-colors">Contact</a>
-          </nav>
-
-          {/* Right side - User and Cart */}
-          <div className="flex items-center space-x-4">
-            <div className="hidden md:flex items-center space-x-2">
-              <span className="text-sm">hello@sweetdreams.com</span>
-              <div className="h-8 w-8 rounded-full bg-amber-600 flex items-center justify-center">
-                <span className="text-sm">U</span>
-              </div>
-            </div>
-            
-            {/* Cart */}
-            <div className="relative">
-              <button className="p-2 rounded-full hover:bg-amber-700 transition-colors">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-                {cartItems > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-amber-500 text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {cartItems}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Mobile Menu Button */}
-            <button 
-              className="md:hidden p-2 rounded-full hover:bg-amber-700 transition-colors"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Menu */}
-        {isMenuOpen && (
-          <div className="md:hidden bg-amber-700 mt-4 py-4 px-6 rounded-lg">
-            <nav className="flex flex-col space-y-4">
-              <a href="#" className="hover:text-amber-200 transition-colors">Home</a>
-              <a href="#" className="hover:text-amber-200 transition-colors">Products</a>
-              <a href="#" className="hover:text-amber-200 transition-colors">About</a>
-              <a href="#" className="hover:text-amber-200 transition-colors">Contact</a>
-              <div className="pt-4 border-t border-amber-600 flex items-center space-x-2">
-                <span className="text-sm">hello@sweetdreams.com</span>
-                <div className="h-8 w-8 rounded-full bg-amber-600 flex items-center justify-center">
-                  <span className="text-sm">U</span>
-                </div>
-              </div>
-            </nav>
-          </div>
-        )}
-      </header>
+      <TopNavbar currentPage="Home" />
 
 
       <section className="relative h-screen bg-white">
