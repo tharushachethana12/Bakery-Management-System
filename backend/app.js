@@ -1,4 +1,5 @@
 
+require("dotenv").config();
 
 const express = require("express");
 const mongoose = require("mongoose");
@@ -16,7 +17,7 @@ app.use("/Payments",paymentrouter);
 
 const mongoURL = process.env.MONGO_URI;
 
-mongoose.connect("mongodb+srv://sahana2002:QhO31A3P9hnHysvq@cluster0.wptflp0.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+mongoose.connect(mongoURL)
 .then(()=> console.log("connected to mongoDB"))
 .then(()=> {
     app.listen(4000);
